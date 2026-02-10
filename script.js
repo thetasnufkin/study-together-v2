@@ -71,6 +71,9 @@
     
     // Task
     currentTask: '',
+    
+    // Sound
+    soundEnabled: true,
   };
 
   // -----------------------------
@@ -120,6 +123,8 @@
 
     taskInput: null,
     taskUpdateBtn: null,
+    
+    soundToggleBtn: null,
 
     settingsModal: null,
     openSettingsBtn: null,
@@ -137,6 +142,7 @@
   window.addEventListener('DOMContentLoaded', async () => {
     bindDom();
     bindUiEvents();
+    loadSoundPreference();
 
     const config = loadFirebaseConfig();
 
@@ -196,6 +202,7 @@
     on(els.openSettingsBtn, 'click', openSettingsModal);
     on(els.closeSettingsBtn, 'click', closeSettingsModal);
     on(els.saveSettingsBtn, 'click', saveSettings);
+    on(els.soundToggleBtn, 'click', toggleSound);
     on(els.settingsModal, 'click', (e) => {
       if (e.target === els.settingsModal) closeSettingsModal();
     });
@@ -480,8 +487,10 @@
       if (prevPhase !== state.timer.phase) {
         if (state.timer.phase === 'break') {
           toast('☕ 休憩開始。話すなら今。');
+          playNotificationSound('break');
         } else {
           toast('🎯 作業開始。口より手を動かす時間。');
+          playNotificationSound('work');
           // 作業フェーズに入ったら通話を切る
           if (state.voiceEnabled) {
             disableVoice(false);
@@ -1292,5 +1301,68 @@
         toast('タスク更新に失敗', true);
       }
     }
+  }
+
+  // -----------------------------
+  // Notification Sound
+  // -----------------------------
+  function playNotificationSound(type) {
+    if (!state.soundEnabled) return;
+
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      if (type === 'break') {
+        // 休憩開始: 優しい上昇音（リラックス感）
+        oscillator.frequency.setValueAtTime(523, audioCtx.currentTime); // C5
+        oscillator.frequency.setValueAtTime(659, audioCtx.currentTime + 0.15); // E5
+        oscillator.frequency.setValueAtTime(784, audioCtx.currentTime + 0.3); // G5
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.5);
+      } else {
+        // 作業開始: しっかりした音（集中モード）
+        oscillator.frequency.setValueAtTime(784, audioCtx.currentTime); // G5
+        oscillator.frequency.setValueAtTime(659, audioCtx.currentTime + 0.1); // E5
+        oscillator.frequency.setValueAtTime(523, audioCtx.currentTime + 0.2); // C5
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.4);
+      }
+
+      // クリーンアップ
+      setTimeout(() => audioCtx.close(), 1000);
+    } catch (err) {
+      console.error('Sound play failed:', err);
+    }
+  }
+
+  function toggleSound() {
+    state.soundEnabled = !state.soundEnabled;
+    localStorage.setItem('st_sound_enabled', state.soundEnabled ? '1' : '0');
+    updateSoundButtonUI();
+    toast(state.soundEnabled ? '🔔 通知音ON' : '🔕 通知音OFF');
+  }
+
+  function updateSoundButtonUI() {
+    if (els.soundToggleBtn) {
+      els.soundToggleBtn.textContent = state.soundEnabled ? '🔔' : '🔕';
+      els.soundToggleBtn.title = state.soundEnabled ? '通知音OFF' : '通知音ON';
+    }
+  }
+
+  function loadSoundPreference() {
+    const saved = localStorage.getItem('st_sound_enabled');
+    state.soundEnabled = saved !== '0'; // デフォルトはON
+    updateSoundButtonUI();
   }
 })();

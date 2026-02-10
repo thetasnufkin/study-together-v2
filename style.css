@@ -77,6 +77,11 @@ body {
   font-size: clamp(1.3rem, 2.5vw, 1.8rem);
 }
 
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .muted {
   color: var(--muted);
 }

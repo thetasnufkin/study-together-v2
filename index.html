@@ -48,7 +48,10 @@
         <h1>📚 Study Together</h1>
         <p class="muted">25分集中 + 5分休憩、休憩中だけ通話できる共同勉強室</p>
       </div>
-      <button id="openSettingsBtn" class="icon-btn" title="タイマー設定" aria-label="タイマー設定">⚙️</button>
+      <div class="header-actions">
+        <button id="soundToggleBtn" class="icon-btn" title="通知音ON" aria-label="通知音切替">🔔</button>
+        <button id="openSettingsBtn" class="icon-btn" title="タイマー設定" aria-label="タイマー設定">⚙️</button>
+      </div>
     </header>
 
     <!-- Lobby Screen -->
@@ -144,7 +147,7 @@
           <label class="field task-field">
             <span>📝 今やっていること</span>
             <div class="task-input-wrap">
-              <input id="taskInput" type="text" maxlength="50" placeholder="例: 淫夢第4章視聴中" />
+              <input id="taskInput" type="text" maxlength="50" placeholder="例: 数学の問題集 P.42〜50" />
               <button id="taskUpdateBtn" class="btn btn-small btn-primary">更新</button>
             </div>
           </label>
