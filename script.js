@@ -68,6 +68,9 @@
     audioCtx: null,
     analyser: null,
     micAnimationFrame: null,
+    
+    // Task
+    currentTask: '',
   };
 
   // -----------------------------
@@ -114,6 +117,9 @@
 
     participantCount: null,
     participantList: null,
+
+    taskInput: null,
+    taskUpdateBtn: null,
 
     settingsModal: null,
     openSettingsBtn: null,
@@ -181,6 +187,11 @@
 
     on(els.voiceToggleBtn, 'click', toggleVoice);
     on(els.muteBtn, 'click', toggleMute);
+
+    on(els.taskUpdateBtn, 'click', handleTaskUpdate);
+    on(els.taskInput, 'keypress', (e) => {
+      if (e.key === 'Enter') handleTaskUpdate();
+    });
 
     on(els.openSettingsBtn, 'click', openSettingsModal);
     on(els.closeSettingsBtn, 'click', closeSettingsModal);
@@ -372,6 +383,7 @@
       peerId: state.uid,
       voiceEnabled: false,
       muted: false,
+      task: '',
     });
     state.participantRef.onDisconnect().remove();
 
@@ -388,6 +400,7 @@
           lastSeen: nowServerMs(),
           muted: state.isMuted,
           voiceEnabled: state.voiceEnabled,
+          task: state.currentTask,
         });
       }
     }, HEARTBEAT_MS);
@@ -997,6 +1010,10 @@
       const li = document.createElement('li');
       li.className = 'participant';
 
+      // ヘッダー部分（名前とタグ）
+      const header = document.createElement('div');
+      header.className = 'participant-header';
+
       const left = document.createElement('div');
       left.className = 'name';
       left.textContent = p.nickname || '名無し';
@@ -1014,8 +1031,18 @@
         right.appendChild(tag(p.muted ? 'VOICE:MUTED' : 'VOICE:ON', 'voice'));
       }
 
-      li.appendChild(left);
-      li.appendChild(right);
+      header.appendChild(left);
+      header.appendChild(right);
+      li.appendChild(header);
+
+      // タスク表示
+      if (p.task) {
+        const taskDiv = document.createElement('div');
+        taskDiv.className = 'participant-task';
+        taskDiv.textContent = `📝 ${p.task}`;
+        li.appendChild(taskDiv);
+      }
+
       els.participantList.appendChild(li);
     });
 
@@ -1247,5 +1274,23 @@
 
   function nowServerMs() {
     return Date.now() + state.serverOffsetMs;
+  }
+
+  // -----------------------------
+  // Task
+  // -----------------------------
+  async function handleTaskUpdate() {
+    const task = (els.taskInput.value || '').trim().slice(0, 50);
+    state.currentTask = task;
+
+    if (state.participantRef) {
+      try {
+        await state.participantRef.update({ task });
+        toast(task ? 'タスクを更新しました' : 'タスクをクリアしました');
+      } catch (err) {
+        console.error(err);
+        toast('タスク更新に失敗', true);
+      }
+    }
   }
 })();

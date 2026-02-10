@@ -138,6 +138,18 @@
           <h3>参加者</h3>
           <span id="participantCount" class="pill small">0人</span>
         </div>
+        
+        <!-- タスク入力欄 -->
+        <div class="task-input-section">
+          <label class="field task-field">
+            <span>📝 今やっていること</span>
+            <div class="task-input-wrap">
+              <input id="taskInput" type="text" maxlength="50" placeholder="例: 数学の問題集 P.42〜50" />
+              <button id="taskUpdateBtn" class="btn btn-small btn-primary">更新</button>
+            </div>
+          </label>
+        </div>
+        
         <ul id="participantList" class="participant-list"></ul>
       </section>
     </section>
