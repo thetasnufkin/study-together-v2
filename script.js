@@ -1310,7 +1310,7 @@
     if (!state.soundEnabled) return;
 
     try {
-      const soundFile = type === 'break' ? './sounds/野獣「オッスお願いしま～す」.wav' : './sounds/野獣「ぬわああああああああん疲れたもおおおおおおおおおおおん(ﾁｶﾚﾀ…)」.wav';
+      const soundFile = type === 'break' ? './sounds/野獣「ぬわああああああああん疲れたもおおおおおおおおおおおん(ﾁｶﾚﾀ…)」.wav' : './sounds/野獣「オッスお願いしま～す」.wav';
       const audio = new Audio(soundFile);
       audio.volume = 0.5; // 音量（0.0〜1.0で調整）
       audio.play().catch(err => {
