@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Together | 共同ポモドーロ勉強室</title>
+  <meta
+    name="description"
+    content="ルームを作って、25分集中＋5分休憩をみんなで同期。休憩中だけ通話できる共同勉強アプリ。"
+  />
+
+  <link rel="preconnect" href="https://www.gstatic.com" />
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="./style.css" />
+
+  <!-- Firebase compat SDK（1回だけ） -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+
+  <!-- PeerJS -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+  <!-- ローカル開発用の設定 -->
+  <script src="./config.js"></script>
+
+  <!-- Firebase Hosting 上だけ init.js を読む（ローカル404回避） -->
+  <script>
+    if (location.hostname.endsWith("web.app") || location.hostname.endsWith("firebaseapp.com")) {
+      const s = document.createElement("script");
+      s.src = "/__/firebase/init.js";
+      s.defer = true;
+      document.head.appendChild(s);
+    }
+  </script>
+
+  <!-- アプリ本体 -->
+  <script type="module" src="./script.js"></script>
+</head>
+
+<body>
+
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <main class="app-shell">
+    <header class="app-header card">
+      <div>
+        <h1>📚 Study Together</h1>
+        <p class="muted">25分集中 + 5分休憩、休憩中だけ通話できる共同勉強室</p>
+      </div>
+      <button id="openSettingsBtn" class="icon-btn" title="タイマー設定" aria-label="タイマー設定">⚙️</button>
+    </header>
+
+    <!-- Lobby Screen -->
+    <section id="lobbyScreen" class="card screen hidden">
+      <h2>ルーム参加</h2>
+
+      <div id="connPill" class="pill">
+        <span id="connDot" class="dot"></span>
+        <span id="connText">接続確認中...</span>
+      </div>
+
+      <label class="field">
+        <span>ニックネーム</span>
+        <input id="nicknameInput" type="text" maxlength="16" placeholder="例: 田所" />
+      </label>
+
+      <label class="field">
+        <span>ルームコード（参加時）</span>
+        <input id="roomCodeInput" type="text" maxlength="8" placeholder="例: AB12CD" />
+      </label>
+
+      <div class="row">
+        <button id="joinBtn" class="btn btn-primary">コードで参加</button>
+        <button id="createBtn" class="btn btn-ghost">新規ルーム作成</button>
+      </div>
+
+      <div class="split"></div>
+
+      <div class="row between">
+        <span class="tiny muted">URLに ?room=XXXX でも参加可</span>
+      </div>
+    </section>
+
+    <!-- Room Screen -->
+    <section id="roomScreen" class="card screen hidden">
+      <div class="room-top">
+        <div>
+          <div id="phaseBadge" class="badge work">🎯 作業中</div>
+          <h2 id="roomTitle">Room</h2>
+          <p class="muted tiny">同期タイマーはルーム全体で共通です</p>
+        </div>
+        <div class="room-actions">
+          <button id="copyCodeBtn" class="btn btn-small">コードコピー</button>
+          <button id="copyInviteBtn" class="btn btn-small">招待リンク</button>
+        </div>
+      </div>
+
+      <div class="timer-wrap">
+        <div class="ring" id="ring" aria-hidden="true"></div>
+        <div class="timer-content">
+          <div id="timerDisplay" class="timer">25:00</div>
+          <div id="timerLabel" class="muted">集中タイム</div>
+          <div class="cycle-line">
+            <span class="tiny">サイクル:</span>
+            <span id="cycleText">0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls-grid">
+        <button id="startPauseBtn" class="btn btn-primary">開始</button>
+        <button id="skipBtn" class="btn btn-ghost">次のフェーズへ</button>
+        <button id="leaveBtn" class="btn btn-danger">退出</button>
+      </div>
+
+      <section class="voice card-sub" id="voiceSection">
+        <div class="row between">
+          <div>
+            <h3>休憩通話</h3>
+            <p id="voiceHelp" class="tiny muted">作業中は通話できません。休憩になると有効化されます。</p>
+          </div>
+          <span id="voiceStatePill" class="pill small">OFF</span>
+        </div>
+
+        <div class="row">
+          <button id="voiceToggleBtn" class="btn btn-ghost" disabled>マイクON</button>
+          <button id="muteBtn" class="btn btn-ghost" disabled>ミュート</button>
+        </div>
+
+        <div class="bars" id="micBars" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </section>
+
+      <section class="participants card-sub">
+        <div class="row between">
+          <h3>参加者</h3>
+          <span id="participantCount" class="pill small">0人</span>
+        </div>
+        <ul id="participantList" class="participant-list"></ul>
+      </section>
+    </section>
+  </main>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-panel">
+      <h3>タイマー設定</h3>
+      <p class="tiny muted">ホストのみ変更できます。変更時はタイマーを作業フェーズへリセットします。</p>
+
+      <label class="field">
+        <span>作業時間（分）</span>
+        <input id="workMinInput" type="number" min="5" max="90" step="1" />
+      </label>
+
+      <label class="field">
+        <span>休憩時間（分）</span>
+        <input id="breakMinInput" type="number" min="1" max="30" step="1" />
+      </label>
+
+      <div class="row">
+        <button id="saveSettingsBtn" class="btn btn-primary">保存</button>
+        <button id="closeSettingsBtn" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+</body>
+</html>
