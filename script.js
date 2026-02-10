@@ -1310,37 +1310,12 @@
     if (!state.soundEnabled) return;
 
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const oscillator = audioCtx.createOscillator();
-      const gainNode = audioCtx.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-
-      if (type === 'break') {
-        // 休憩開始: 優しい上昇音（リラックス感）
-        oscillator.frequency.setValueAtTime(523, audioCtx.currentTime); // C5
-        oscillator.frequency.setValueAtTime(659, audioCtx.currentTime + 0.15); // E5
-        oscillator.frequency.setValueAtTime(784, audioCtx.currentTime + 0.3); // G5
-        oscillator.type = 'sine';
-        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-        oscillator.start(audioCtx.currentTime);
-        oscillator.stop(audioCtx.currentTime + 0.5);
-      } else {
-        // 作業開始: しっかりした音（集中モード）
-        oscillator.frequency.setValueAtTime(784, audioCtx.currentTime); // G5
-        oscillator.frequency.setValueAtTime(659, audioCtx.currentTime + 0.1); // E5
-        oscillator.frequency.setValueAtTime(523, audioCtx.currentTime + 0.2); // C5
-        oscillator.type = 'sine';
-        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-        oscillator.start(audioCtx.currentTime);
-        oscillator.stop(audioCtx.currentTime + 0.4);
-      }
-
-      // クリーンアップ
-      setTimeout(() => audioCtx.close(), 1000);
+      const soundFile = type === 'break' ? './sounds/break.mp3' : './sounds/work.mp3';
+      const audio = new Audio(soundFile);
+      audio.volume = 0.5; // 音量（0.0〜1.0で調整）
+      audio.play().catch(err => {
+        console.error('Sound play failed:', err);
+      });
     } catch (err) {
       console.error('Sound play failed:', err);
     }
