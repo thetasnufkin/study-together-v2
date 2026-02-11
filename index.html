@@ -13,39 +13,41 @@
   <link rel="preconnect" href="https://unpkg.com" />
   <link rel="stylesheet" href="./style.css" />
 
-  <!-- Firebase compat SDK -->
-  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<!-- Firebase compat SDK -->
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 
-  <!-- PeerJS -->
-  <script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<!-- PeerJS -->
+<script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
-  <!-- config.js は存在するときだけ読み込む -->
-  <script>
-    (function () {
-      const s = document.createElement("script");
-      s.src = "./config.js";
-      s.defer = true;
-      s.onerror = () => {
-        // ローカルで未配置でも無視。localStorage設定やHosting init.jsで補う想定
-      };
-      document.head.appendChild(s);
-    })();
-  </script>
+<script>
+  (function () {
+    const isHosting =
+      location.hostname.endsWith("web.app") ||
+      location.hostname.endsWith("firebaseapp.com");
 
-  <!-- Firebase Hosting 上だけ init.js -->
-  <script>
-    if (location.hostname.endsWith("web.app") || location.hostname.endsWith("firebaseapp.com")) {
-      const s = document.createElement("script");
+    const s = document.createElement("script");
+
+    if (isHosting) {
+      // 本番は Firebase Hosting の init.js のみ
       s.src = "/__/firebase/init.js";
-      s.defer = true;
-      document.head.appendChild(s);
+    } else {
+      // ローカル/preview は config.js のみ
+      s.src = "./config.js";
+      s.onerror = () => {
+        // 未配置でも無視（必要なら main 側で設定不足エラー表示）
+      };
     }
-  </script>
 
-  <!-- アプリ本体 -->
-  <script type="module" src="./src/main.js"></script>
+    s.defer = true;
+    document.head.appendChild(s);
+  })();
+</script>
+
+<!-- アプリ本体 -->
+<script type="module" src="./src/main.js"></script>
+
 </head>
 
 <body>

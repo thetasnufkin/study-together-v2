@@ -3,6 +3,9 @@ import { state, nowServerMs, getCurrentUid } from './state.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, generateRoomCode, HEARTBEAT_MS, STALE_MS } from './utils.js';
 import { updateSoundButtonUI, toast } from './ui.js';
 
+// =========================
+// Firebase bootstrap helpers
+// =========================
 function ensureFirebaseLoaded() {
   if (!window.firebase || typeof window.firebase.initializeApp !== 'function') {
     throw new Error('firebase-app-compat is not loaded');
@@ -15,40 +18,113 @@ function ensureFirebaseLoaded() {
   }
 }
 
-export function loadFirebaseConfig() {
-  if (window.STUDY_TOGETHER_FIREBASE_CONFIG) return window.STUDY_TOGETHER_FIREBASE_CONFIG;
-  if (window.firebase?.apps?.length) return window.firebase.app().options || null;
+function norm(v) {
+  return (v ?? '').toString().trim();
+}
 
+/**
+ * 同一プロジェクト判定:
+ * - projectId を最優先
+ * - databaseURL は補助（どちらか欠けてる環境があるため）
+ */
+function isSameFirebaseProject(a, b) {
+  const aProject = norm(a?.projectId);
+  const bProject = norm(b?.projectId);
+  if (aProject && bProject && aProject !== bProject) return false;
+
+  const aDb = norm(a?.databaseURL);
+  const bDb = norm(b?.databaseURL);
+  if (aDb && bDb && aDb !== bDb) return false;
+
+  return true;
+}
+
+/**
+ * 設定をどこから読むかを一元化
+ * 優先順位:
+ * 1) window.STUDY_TOGETHER_FIREBASE_CONFIG
+ * 2) 既存 app.options
+ * 3) localStorage(STORAGE_KEYS.firebaseConfig)
+ */
+export function loadFirebaseConfig() {
+  // 1) デプロイ環境の埋め込み設定を最優先
+  if (window.STUDY_TOGETHER_FIREBASE_CONFIG) {
+    return window.STUDY_TOGETHER_FIREBASE_CONFIG;
+  }
+
+  // 2) 既に初期化済みならその options
+  if (window.firebase?.apps?.length) {
+    return window.firebase.app().options || null;
+  }
+
+  // 3) ローカル保存
   const raw = localStorage.getItem(STORAGE_KEYS.firebaseConfig);
   if (!raw) return null;
+
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
     return null;
   }
 }
 
+/**
+ * 開発中に残骸localStorageが混ざる事故が多いので、
+ * window側設定がある場合はlocalStorageを同期しておく。
+ */
+function syncConfigCacheFromWindowConfig() {
+  const cfg = window.STUDY_TOGETHER_FIREBASE_CONFIG;
+  if (!cfg) return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.firebaseConfig, JSON.stringify(cfg));
+  } catch {
+    // ignore quota / private mode weirdness
+  }
+}
+
 export async function initFirebase(config) {
-  if (!config) throw new Error('Firebase config is missing');
   ensureFirebaseLoaded();
 
+  // 引数未指定なら内部で拾う
+  const incoming = config || loadFirebaseConfig();
+  if (!incoming) throw new Error('Firebase config is missing');
+
+  // デプロイ設定を最優先にキャッシュ同期（残骸対策）
+  syncConfigCacheFromWindowConfig();
+
   const apps = window.firebase.apps || [];
+
   if (apps.length === 0) {
-    state.app = window.firebase.initializeApp(config);
+    state.app = window.firebase.initializeApp(incoming);
   } else {
     state.app = window.firebase.app();
-    const prev = state.app.options || {};
-    const keysToCheck = [
-      'apiKey',
-      'authDomain',
-      'projectId',
-      'databaseURL',
-      'storageBucket',
-      'messagingSenderId',
-      'appId',
-    ];
-    const mismatch = keysToCheck.some((k) => (prev[k] || '') !== (config[k] || ''));
-    if (mismatch) throw new Error('Firebase already initialized with different config.');
+    const existing = state.app.options || {};
+
+    // 同一プロジェクトかだけ厳密に見る（全キー一致は厳しすぎる）
+    if (!isSameFirebaseProject(existing, incoming)) {
+      console.warn('Firebase config mismatch detected.', {
+        current: {
+          projectId: existing.projectId,
+          databaseURL: existing.databaseURL,
+          appId: existing.appId,
+        },
+        incoming: {
+          projectId: incoming.projectId,
+          databaseURL: incoming.databaseURL,
+          appId: incoming.appId,
+        },
+      });
+
+      // localStorage由来の古い設定が犯人なことが多いので消す
+      try {
+        localStorage.removeItem(STORAGE_KEYS.firebaseConfig);
+      } catch {
+        // ignore
+      }
+
+      throw new Error('Firebase already initialized with different config.');
+    }
   }
 
   state.db = state.app.database();

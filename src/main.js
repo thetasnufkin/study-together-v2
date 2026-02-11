@@ -27,6 +27,20 @@ function makeGuestName() {
   return `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+// ----- init guard -----
+let bootStarted = false;
+let bootFinished = false;
+
+function syncWindowConfigToLocalStorage() {
+  const cfg = window.STUDY_TOGETHER_FIREBASE_CONFIG;
+  if (!cfg) return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.firebaseConfig, JSON.stringify(cfg));
+  } catch {
+    // no-op
+  }
+}
+
 // 旧setup画面互換（要素が無ければ何もしない）
 function handleSaveConfig() {
   if (!els.firebaseConfigInput) return;
@@ -212,13 +226,44 @@ function bindUiEvents() {
   on(els.soundToggleBtn, 'click', toggleSound);
 }
 
-window.addEventListener('DOMContentLoaded', async () => {
+async function bootApp() {
+  if (window.STUDY_TOGETHER_FIREBASE_CONFIG) {
+    localStorage.setItem(
+      STORAGE_KEYS.firebaseConfig,
+      JSON.stringify(window.STUDY_TOGETHER_FIREBASE_CONFIG)
+    );
+  }
+
+  if (bootFinished) return;
+  if (bootStarted) return; // 二重起動防止
+  bootStarted = true;
+
   bindDom();
   bindUiEvents();
   loadSoundPreference();
   initCounter();
 
+  // window設定があればlocalStorageへ同期（残骸での mismatch 対策）
+  syncWindowConfigToLocalStorage();
+
   const config = loadFirebaseConfig();
+
+  if (!config) {
+    showScreen('auth');
+    disableLobbyButtons(true);
+    if (els.connDot) els.connDot.style.background = '#f87171';
+    if (els.connText) els.connText.textContent = '初期化エラー: Firebase設定が見つかりません';
+    toast('Firebase設定が未設定。config.js または Hosting init.js を確認して。', true);
+    bootStarted = false;
+    return;
+  }
+
+  // デバッグ可視化（嫌なら消していい）
+  console.log('[boot] config used:', {
+    projectId: config.projectId,
+    databaseURL: config.databaseURL,
+    appId: config.appId,
+  });
 
   try {
     await initFirebase(config);
@@ -235,14 +280,14 @@ window.addEventListener('DOMContentLoaded', async () => {
       els.roomCodeInput.value = roomFromQuery;
     }
 
-    // 接続表示
     if (els.connDot) els.connDot.style.background = '#34d399';
     if (els.connText) els.connText.textContent = '接続OK';
     disableLobbyButtons(false);
+
+    bootFinished = true;
   } catch (err) {
     console.error(err);
 
-    // エラー時はロビーを見せても参加できないのでauth表示のまま案内
     showScreen('auth');
     disableLobbyButtons(true);
 
@@ -250,6 +295,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (els.connText) {
       els.connText.textContent = '初期化エラー: Firebase設定を確認してください';
     }
-    toast('アプリ初期化に失敗。config.js または Hosting init.js を確認して。', true);
+    toast('アプリ初期化に失敗。config.js / init.js / localStorage の不一致を確認して。', true);
+
+    // 失敗時は再試行できるようにフラグを戻す
+    bootStarted = false;
   }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  bootApp();
 });
