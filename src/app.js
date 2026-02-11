@@ -11,6 +11,7 @@ import {
   initPeerIfNeeded, connectToVoicePeers, syncParticipantVoiceState, disableVoice,
   playNotificationSound
 } from './infra.js';
+import { initWorkSession, recordWorkSessionHistory } from './history.js';
 
 export function hydrateLobbyInputs() {
   const savedNick = localStorage.getItem(STORAGE_KEYS.nickname) || '';
@@ -173,6 +174,11 @@ function attachRoomListeners() {
         toast('🎯 作業開始。口より手を動かす時間。');
         playNotificationSound('work');
         if (state.voiceEnabled) disableVoice(false);
+
+        // Start tracking work session for non-host participants
+        if (!state.isHost) {
+          initWorkSession();
+        }
       }
     }
   });
@@ -274,6 +280,12 @@ async function advancePhase() {
   try {
     const currentPhase = state.timer.phase;
     const nextPhase = currentPhase === 'work' ? 'break' : 'work';
+
+    // Record work session completion BEFORE transitioning
+    if (currentPhase === 'work') {
+      await recordWorkSessionHistory();
+    }
+
     const nextDuration = phaseDurationSec(nextPhase);
     const nextCycle = currentPhase === 'work'
       ? Number(state.timer.cycle || 0) + 1
@@ -287,6 +299,11 @@ async function advancePhase() {
       cycle: nextCycle,
       version: (state.timer.version || 0) + 1,
     });
+
+    // Start tracking new work session if transitioning to work
+    if (nextPhase === 'work') {
+      initWorkSession();
+    }
   } finally {
     state.isSwitchingPhase = false;
   }

@@ -58,6 +58,13 @@ export const state = {
   // Task
   currentTask: '',
 
+  // Work session tracking
+  workSession: {
+    startedAt: null,
+    startTask: '',
+    isActive: false,
+  },
+
   // Sound
   soundEnabled: true,
 };

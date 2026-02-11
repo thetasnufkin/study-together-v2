@@ -1,7 +1,7 @@
 // src/main.js
-import { state } from './state.js';
+import { state, getCurrentUid } from './state.js';
 import { on, normalizeRoomCode, getRoomFromQuery, STORAGE_KEYS } from './utils.js';
-import { bindDom, els, showScreen, toast, disableLobbyButtons } from './ui.js';
+import { bindDom, els, showScreen, toast, disableLobbyButtons, renderHistoryList, showHistoryLoading } from './ui.js';
 import {
   loadFirebaseConfig,
   initFirebase,
@@ -22,9 +22,69 @@ import {
   handleTaskUpdate,
   saveSettings,
 } from './app.js';
+import { loadWorkHistory, deleteHistoryEntry } from './history.js';
 
 function makeGuestName() {
   return `Guest-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+// ----- History Modal -----
+let currentHistory = [];
+
+async function openHistoryModal() {
+  if (!state.roomId || !els.historyModal) return;
+
+  showHistoryLoading();
+  els.historyModal.classList.remove('hidden');
+  els.historyModal.setAttribute('aria-hidden', 'false');
+
+  await refreshHistory();
+}
+
+function closeHistoryModal() {
+  if (!els.historyModal) return;
+  els.historyModal.classList.add('hidden');
+  els.historyModal.setAttribute('aria-hidden', 'true');
+}
+
+async function refreshHistory() {
+  try {
+    showHistoryLoading();
+    currentHistory = await loadWorkHistory();
+    renderHistoryList(currentHistory, handleDeleteHistory);
+  } catch (err) {
+    console.error('Failed to load history:', err);
+    toast('履歴の読み込みに失敗しました', true);
+  }
+}
+
+async function handleDeleteHistory(sessionId) {
+  if (!confirm('この履歴を削除しますか?')) return;
+
+  try {
+    await deleteHistoryEntry(sessionId);
+    toast('履歴を削除しました');
+    await refreshHistory();
+  } catch (err) {
+    console.error('Failed to delete history:', err);
+    toast('履歴の削除に失敗しました', true);
+  }
+}
+
+async function handleClearAllHistory() {
+  if (!confirm('すべての履歴を削除しますか? この操作は取り消せません。')) return;
+
+  try {
+    const me = getCurrentUid();
+    if (!me || !state.roomRef) return;
+
+    await state.roomRef.child(`participants/${me}/history`).remove();
+    toast('すべての履歴を削除しました');
+    await refreshHistory();
+  } catch (err) {
+    console.error('Failed to clear history:', err);
+    toast('履歴の削除に失敗しました', true);
+  }
 }
 
 // ----- init guard -----
@@ -220,6 +280,16 @@ function bindUiEvents() {
 
   on(els.settingsModal, 'click', (e) => {
     if (e.target === els.settingsModal) closeSettingsModal();
+  });
+
+  // history
+  on(els.historyBtn, 'click', openHistoryModal);
+  on(els.closeHistoryBtn, 'click', closeHistoryModal);
+  on(els.historyRefreshBtn, 'click', refreshHistory);
+  on(els.historyClearBtn, 'click', handleClearAllHistory);
+
+  on(els.historyModal, 'click', (e) => {
+    if (e.target === els.historyModal) closeHistoryModal();
   });
 
   // sound

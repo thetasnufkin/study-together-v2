@@ -60,6 +60,7 @@
         <p class="muted">25分集中 + 5分休憩、休憩中だけ通話できる共同勉強室</p>
       </div>
       <div class="header-actions">
+        <button id="historyBtn" class="icon-btn" title="作業履歴" aria-label="作業履歴">📊</button>
         <button id="soundToggleBtn" class="icon-btn" title="通知音ON" aria-label="通知音切替">🔔</button>
         <button id="openSettingsBtn" class="icon-btn" title="タイマー設定" aria-label="タイマー設定">⚙️</button>
       </div>
@@ -210,6 +211,43 @@
       <div class="row">
         <button id="saveSettingsBtn" class="btn btn-primary">保存</button>
         <button id="closeSettingsBtn" class="btn btn-ghost">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Modal -->
+  <div id="historyModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-panel history-panel">
+      <div class="modal-header">
+        <h3>📊 作業履歴</h3>
+        <button id="closeHistoryBtn" class="icon-btn" aria-label="閉じる">✕</button>
+      </div>
+
+      <div class="history-stats">
+        <div class="stat-card">
+          <span class="stat-label">総セッション</span>
+          <span id="historyTotalSessions" class="stat-value">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">総作業時間</span>
+          <span id="historyTotalTime" class="stat-value">0h 0m</span>
+        </div>
+      </div>
+
+      <div class="history-controls">
+        <button id="historyRefreshBtn" class="btn btn-small">🔄 更新</button>
+        <button id="historyClearBtn" class="btn btn-small btn-danger">🗑️ 全削除</button>
+      </div>
+
+      <div id="historyListContainer" class="history-list-container">
+        <ul id="historyList" class="history-list"></ul>
+        <div id="historyEmpty" class="history-empty hidden">
+          <p class="muted">まだ作業セッションがありません。</p>
+          <p class="tiny muted">25分間の作業を完了すると、ここに履歴が表示されます。</p>
+        </div>
+        <div id="historyLoading" class="history-loading hidden">
+          <p class="muted">読み込み中...</p>
+        </div>
       </div>
     </div>
   </div>

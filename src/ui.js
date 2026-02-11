@@ -73,6 +73,18 @@ export const els = {
   workMinInput: null,
   breakMinInput: null,
 
+  // history modal
+  historyBtn: null,
+  historyModal: null,
+  closeHistoryBtn: null,
+  historyList: null,
+  historyEmpty: null,
+  historyLoading: null,
+  historyTotalSessions: null,
+  historyTotalTime: null,
+  historyRefreshBtn: null,
+  historyClearBtn: null,
+
   // toast
   toast: null,
 };
@@ -249,4 +261,87 @@ export function updateSoundButtonUI() {
   if (!els.soundToggleBtn) return;
   els.soundToggleBtn.textContent = state.soundEnabled ? '🔔' : '🔕';
   els.soundToggleBtn.title = state.soundEnabled ? '通知音OFF' : '通知音ON';
+}
+
+export function showHistoryLoading() {
+  if (!els.historyLoading || !els.historyList || !els.historyEmpty) return;
+  els.historyLoading.classList.remove('hidden');
+  els.historyList.innerHTML = '';
+  els.historyEmpty.classList.add('hidden');
+}
+
+export function renderHistoryList(history, onDelete) {
+  if (!els.historyList || !els.historyEmpty || !els.historyLoading) return;
+
+  els.historyLoading.classList.add('hidden');
+
+  if (!history || history.length === 0) {
+    els.historyList.innerHTML = '';
+    els.historyEmpty.classList.remove('hidden');
+    if (els.historyTotalSessions) els.historyTotalSessions.textContent = '0';
+    if (els.historyTotalTime) els.historyTotalTime.textContent = '0h 0m';
+    return;
+  }
+
+  els.historyEmpty.classList.add('hidden');
+  els.historyList.innerHTML = '';
+
+  // Calculate stats
+  const totalSessions = history.length;
+  const totalSeconds = history.reduce((sum, item) => sum + (item.duration || 0), 0);
+  const totalHours = Math.floor(totalSeconds / 3600);
+  const totalMinutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (els.historyTotalSessions) els.historyTotalSessions.textContent = totalSessions;
+  if (els.historyTotalTime) els.historyTotalTime.textContent = `${totalHours}h ${totalMinutes}m`;
+
+  // Render list items
+  history.forEach((item) => {
+    const li = document.createElement('li');
+    li.className = 'history-item';
+
+    const icon = document.createElement('div');
+    icon.className = 'history-item-icon';
+    icon.textContent = '🎯';
+
+    const content = document.createElement('div');
+    content.className = 'history-item-content';
+
+    const task = document.createElement('div');
+    task.className = 'history-item-task';
+    task.textContent = item.task || '（タスク未設定）';
+
+    const meta = document.createElement('div');
+    meta.className = 'history-item-meta';
+
+    const date = new Date(item.completedAt || item.startedAt);
+    const dateStr = `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+    const durationMin = Math.round((item.duration || 0) / 60);
+
+    meta.innerHTML = `
+      <span>📅 ${dateStr}</span>
+      <span>⏱️ ${durationMin}分</span>
+    `;
+
+    content.appendChild(task);
+    content.appendChild(meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'history-item-actions';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'icon-btn delete-history';
+    deleteBtn.textContent = '🗑️';
+    deleteBtn.title = '削除';
+    deleteBtn.onclick = () => onDelete(item.id);
+
+    actions.appendChild(deleteBtn);
+
+    li.appendChild(icon);
+    li.appendChild(content);
+    li.appendChild(actions);
+
+    els.historyList.appendChild(li);
+  });
 }
