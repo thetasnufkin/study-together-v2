@@ -12,20 +12,29 @@
   <link rel="preconnect" href="https://www.gstatic.com" />
   <link rel="preconnect" href="https://unpkg.com" />
   <link rel="stylesheet" href="./style.css" />
-  <!-- アプリ本体 -->
-  <script type="module" src="./script.js"></script>
-  <!-- Firebase compat SDK（1回だけ） -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+
+  <!-- Firebase compat SDK -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 
   <!-- PeerJS -->
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
-  <!-- ローカル開発用の設定 -->
-  <script src="./config.js"></script>
+  <!-- config.js は存在するときだけ読み込む -->
+  <script>
+    (function () {
+      const s = document.createElement("script");
+      s.src = "./config.js";
+      s.defer = true;
+      s.onerror = () => {
+        // ローカルで未配置でも無視。localStorage設定やHosting init.jsで補う想定
+      };
+      document.head.appendChild(s);
+    })();
+  </script>
 
-  <!-- Firebase Hosting 上だけ init.js を読む（ローカル404回避） -->
+  <!-- Firebase Hosting 上だけ init.js -->
   <script>
     if (location.hostname.endsWith("web.app") || location.hostname.endsWith("firebaseapp.com")) {
       const s = document.createElement("script");
@@ -35,11 +44,11 @@
     }
   </script>
 
-  
+  <!-- アプリ本体 -->
+  <script type="module" src="./src/main.js"></script>
 </head>
 
 <body>
-
   <div class="bg-grid" aria-hidden="true"></div>
 
   <main class="app-shell">
@@ -53,6 +62,17 @@
         <button id="openSettingsBtn" class="icon-btn" title="タイマー設定" aria-label="タイマー設定">⚙️</button>
       </div>
     </header>
+
+    <!-- Auth Screen -->
+    <section id="authScreen" class="card screen">
+      <h2>参加方法を選択</h2>
+      <p class="muted">ゲストで気軽に参加するか、アカウントでログインして参加できます。</p>
+      <div class="row">
+        <button id="enterAsGuestBtn" class="btn btn-ghost">ゲストで入る</button>
+        <button id="loginGoogleBtn" class="btn btn-primary">Googleでログイン</button>
+      </div>
+      <p class="tiny muted">※ どちらも同じルーム機能を使えます</p>
+    </section>
 
     <!-- Lobby Screen -->
     <section id="lobbyScreen" class="card screen hidden">
@@ -141,17 +161,18 @@
           <h3>参加者</h3>
           <span id="participantCount" class="pill small">0人</span>
         </div>
-        
+
         <!-- タスク入力欄 -->
         <div class="task-input-section">
           <label class="field task-field">
             <span>📝 今やっていること</span>
             <div class="task-input-wrap">
-              <input id="taskInput" type="text" maxlength="50" placeholder="例: 淫夢MAD作成" />
+              <input id="taskInput" type="text" maxlength="50" placeholder="例: 問題集3ページ進める" />
               <button id="taskUpdateBtn" class="btn btn-small btn-primary">更新</button>
             </div>
           </label>
         </div>
+
         <!-- カウンター -->
         <div class="counter-section">
           <label class="field counter-field">
@@ -163,7 +184,6 @@
           </label>
         </div>
 
-        
         <ul id="participantList" class="participant-list"></ul>
       </section>
     </section>
