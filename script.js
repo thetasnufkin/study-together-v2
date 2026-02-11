@@ -1039,7 +1039,7 @@
       els.voiceStatePill.textContent = enabled ? (state.isMuted ? 'MUTED' : 'LIVE') : 'OFF';
     }
 
-    els.voiceToggleBtn.textContent = enabled ? 'マイクOFF' : 'マイクON';
+    els.voiceToggleBtn.textContent = enabled ? 'マイクOFFだよ' : 'マイクONだよ';
     els.muteBtn.textContent = state.isMuted ? 'ミュート解除' : 'ミュート';
   }
 
