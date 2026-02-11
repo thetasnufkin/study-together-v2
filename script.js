@@ -232,25 +232,62 @@
     }
   }
 
-  async function initFirebase(config) {
+ async function initFirebase(config) {
   if (!config) throw new Error("Firebase config is missing");
 
-  if (!window.firebase?.apps?.length) {
+  // SDK読込チェック
+  if (!window.firebase || typeof window.firebase.initializeApp !== "function") {
+    throw new Error("firebase-app-compat is not loaded");
+  }
+  if (typeof window.firebase.auth !== "function") {
+    throw new Error("firebase-auth-compat is not loaded");
+  }
+  if (!window.firebase.database || typeof window.firebase.database !== "function") {
+    throw new Error("firebase-database-compat is not loaded");
+  }
+
+  const apps = window.firebase.apps || [];
+  if (apps.length === 0) {
+    // 初回初期化
     state.app = window.firebase.initializeApp(config);
   } else {
+    // 既存DEFAULTを再利用
     state.app = window.firebase.app();
+
+    // 既存appの設定と今回configが食い違っていないか検証
+    const prev = state.app.options || {};
+    const keysToCheck = [
+      "apiKey",
+      "authDomain",
+      "projectId",
+      "databaseURL",
+      "storageBucket",
+      "messagingSenderId",
+      "appId"
+    ];
+
+    const mismatch = keysToCheck.some((k) => (prev[k] || "") !== (config[k] || ""));
+    if (mismatch) {
+      console.error("Existing Firebase options:", prev);
+      console.error("Incoming Firebase config:", config);
+      throw new Error(
+        "Firebase already initialized with different config. " +
+        "Likely stale cache / duplicate script / mixed env config."
+      );
+    }
   }
 
   state.db = state.app.database();
 
-  // auth SDKが読めてない場合を即検知
-  if (typeof window.firebase.auth !== "function") {
-    throw new Error("firebase-auth-compat is not loaded");
+  // 既にログイン済みなら再サインイン不要
+  const auth = window.firebase.auth();
+  if (!auth.currentUser) {
+    await auth.signInAnonymously();
   }
 
-  await window.firebase.auth().signInAnonymously();
   return true;
 }
+
 
 
 
