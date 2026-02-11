@@ -12,6 +12,26 @@
   --shadow: 0 12px 40px rgba(2, 6, 23, 0.45);
   --radius: 18px;
 }
+.counter-section {
+  margin-top: 12px;
+}
+
+.counter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.counter-value {
+  min-width: 48px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 1.1rem;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+}
 
 * {
   box-sizing: border-box;

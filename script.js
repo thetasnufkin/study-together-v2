@@ -982,6 +982,33 @@
     }
   }
 
+  // ===== Counter =====
+(function initCounter() {
+  const counterEl = document.getElementById('counterValue');
+  const counterBtn = document.getElementById('counterBtn');
+  if (!counterEl || !counterBtn) return;
+
+  let count = 0;
+
+  // 効果音（必要ならファイル名を変更）
+  const clickSound = new Audio('./sounds/野獣「ヌッ！」.mp3');
+  clickSound.preload = 'auto';
+
+  counterBtn.addEventListener('click', () => {
+    count += 1;
+    counterEl.textContent = String(count);
+
+    // 連打時にも鳴るように毎回先頭へ
+    try {
+      clickSound.currentTime = 0;
+      clickSound.play().catch(() => {
+        // ブラウザ制限などで失敗してもアプリは止めない
+      });
+    } catch (_) {}
+  });
+})();
+
+
   // -----------------------------
   // UI rendering
   // -----------------------------
