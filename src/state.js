@@ -1,6 +1,13 @@
 // src/state.js
 import { DEFAULT_SETTINGS, getOrCreateUid } from './utils.js';
 
+function createSessionId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  }
+  return Math.random().toString(36).slice(2, 14);
+}
+
 export const state = {
   db: null,
   app: null,
@@ -9,6 +16,10 @@ export const state = {
 
   // ローカル端末ID（匿名利用時のフォールバックやデバッグ用）
   uid: getOrCreateUid(),
+  // タブごとの一時ID（同一アカウント複数タブ参加でも衝突しない）
+  sessionId: createSessionId(),
+  participantKey: null,
+
   nickname: '',
 
   roomId: null,
@@ -60,6 +71,15 @@ export const state = {
 
   // Sound
   soundEnabled: true,
+
+  participantsLoaded: false,
+  metaLoaded: false,
+  hostClaimInFlight: false,
+  hostClaimDisabled: false,
+  hostMissingSince: 0,
+  joinedRoomAt: 0,
+  isLeaving: false,
+
 };
 
 export function nowServerMs() {
@@ -72,6 +92,20 @@ export function nowServerMs() {
  */
 export function getCurrentUid() {
   return state.auth?.uid || state.uid;
+}
+
+
+/**
+ * 参加者レコードキー（同一auth.uidでもタブごとに一意）
+ */
+export function getCurrentParticipantKey() {
+  const uid = getCurrentUid();
+  if (!uid) return null;
+  const prefix = `${uid}_`;
+  if (!state.participantKey || !String(state.participantKey).startsWith(prefix)) {
+    state.participantKey = `${uid}_${state.sessionId}`;
+  }
+  return state.participantKey;
 }
 
 /**

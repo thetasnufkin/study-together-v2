@@ -1,5 +1,5 @@
 // src/app.js
-import { state, nowServerMs, getCurrentUid } from './state.js';
+import { state, nowServerMs, getCurrentUid, getCurrentParticipantKey } from './state.js';
 import {
   STORAGE_KEYS, DEFAULT_SETTINGS, HEARTBEAT_MS, STALE_MS,
   sanitizeNickname, normalizeRoomCode, clampInt,
@@ -11,6 +11,9 @@ import {
   initPeerIfNeeded, connectToVoicePeers, syncParticipantVoiceState, disableVoice,
   playNotificationSound
 } from './infra.js';
+
+const PARTICIPANT_SELF_CHECK_GRACE_MS = 2_500;
+const HOST_MISSING_GRACE_MS = 5_000;
 
 export function hydrateLobbyInputs() {
   const savedNick = localStorage.getItem(STORAGE_KEYS.nickname) || '';
@@ -69,13 +72,15 @@ export async function handleJoin() {
 }
 
 export async function enterRoom(roomId, nickname, { justCreated }) {
-  const me = getCurrentUid();
-  if (!me) {
+  const meUid = getCurrentUid();
+  const meKey = getCurrentParticipantKey();
+  if (!meUid || !meKey) {
     toast('認証状態が見つかりません。先にログインして。', true);
     showScreen('auth');
     return;
   }
 
+  // 既存状態を安全に掃除
   cleanupRoomOnly();
 
   state.roomId = roomId;
@@ -83,20 +88,31 @@ export async function enterRoom(roomId, nickname, { justCreated }) {
   state.roomRef = state.db.ref(`rooms/${roomId}`);
   localStorage.setItem(STORAGE_KEYS.nickname, nickname);
 
-  state.participantRef = state.roomRef.child(`participants/${me}`);
+  state.participantRef = state.roomRef.child(`participants/${meKey}`);
   await state.participantRef.set({
     nickname,
     joinedAt: nowServerMs(),
     lastSeen: nowServerMs(),
-    peerId: me,
+    authUid: meUid,
+    peerId: meKey,
     voiceEnabled: false,
     muted: false,
     task: '',
   });
   state.participantRef.onDisconnect().remove();
+  state.participantsLoaded = false;
+  state.metaLoaded = false;
+  state.hostClaimInFlight = false;
+  state.hostClaimDisabled = false;
+  state.hostMissingSince = 0;
+  state.joinedRoomAt = Date.now();
+  state.isLeaving = false;
 
   attachRoomListeners();
-  await initPeerIfNeeded();
+
+  // NOTE:
+  // Peer接続失敗でルーム参加そのものが失敗しないように、
+  // 通話サーバ接続は toggleVoice 時に遅延初期化する。
 
   state.heartbeatTicker = setInterval(() => {
     if (state.participantRef) {
@@ -123,23 +139,35 @@ export async function enterRoom(roomId, nickname, { justCreated }) {
 
 function attachRoomListeners() {
   onDb(state.roomRef.child('participants'), 'value', (snap) => {
-    const map = new Map();
-    snap.forEach((child) => map.set(child.key, child.val()));
-    state.participants = map;
-    renderParticipants({ canUseVoiceNow, connectToVoicePeers });
-    claimHostIfNeeded();
-  });
+  if (state.isLeaving) return;
 
-  onDb(state.roomRef.child('meta'), 'value', (snap) => {
-    const meta = snap.val() || {};
-    const me = getCurrentUid();
-    state.hostId = meta.hostId || null;
-    state.isHost = !!me && state.hostId === me;
-    updateTimerUiOnly({ calcRemainingSec, phaseDurationSec, canUseVoiceNow });
-    claimHostIfNeeded();
-  });
+  const map = new Map();
+  snap.forEach((child) => map.set(child.key, child.val()));
+  state.participants = map;
+  state.participantsLoaded = true;
+
+  renderParticipants({ canUseVoiceNow, connectToVoicePeers });
+  void claimHostIfNeeded();
+});
+
+onDb(state.roomRef.child('meta'), 'value', (snap) => {
+  if (state.isLeaving) return;
+
+  const meta = snap.val() || {};
+  const meKey = getCurrentParticipantKey();
+
+  state.hostId = meta.hostId || null;
+  state.isHost = !!meKey && state.hostId === meKey;
+  state.metaLoaded = true;
+
+  updateTimerUiOnly({ calcRemainingSec, phaseDurationSec, canUseVoiceNow });
+  void claimHostIfNeeded();
+});
+
 
   onDb(state.roomRef.child('settings'), 'value', (snap) => {
+    if (state.isLeaving) return;
+
     const s = snap.val();
     if (!s) return;
     state.settings.workSec = clampInt(s.workSec, 5 * 60, 90 * 60, DEFAULT_SETTINGS.workSec);
@@ -150,6 +178,8 @@ function attachRoomListeners() {
   });
 
   onDb(state.roomRef.child('timer'), 'value', (snap) => {
+    if (state.isLeaving) return;
+
     const t = snap.val();
     if (!t) return;
 
@@ -178,28 +208,57 @@ function attachRoomListeners() {
   });
 
   onDb(state.roomRef, 'value', (snap) => {
-    const me = getCurrentUid();
+    const meKey = getCurrentParticipantKey();
+
     if (!snap.exists()) {
-      toast('ルームが閉じられました。', true);
-      leaveRoom();
+      if (!state.isLeaving) {
+        toast('ルームが閉じられました。', true);
+        void leaveRoom();
+      }
       return;
     }
-    if (state.roomId && me && !state.participants.has(me)) {
-      toast('ルームから切断されました。', true);
-      leaveRoom();
+
+    // 参加直後は listeners の順序差で participants が未反映なことがある。
+    // ローカルMapではなく room snapshot 側で自分の存在を確認する。
+    const inGrace = Date.now() - Number(state.joinedRoomAt || 0) < PARTICIPANT_SELF_CHECK_GRACE_MS;
+    const meExistsInRoom = !!meKey && snap.child(`participants/${meKey}`).exists();
+
+    if (state.roomId && meKey && state.participantsLoaded && !inGrace && !meExistsInRoom) {
+      if (!state.isLeaving) {
+        toast('ルームから切断されました。', true);
+        void leaveRoom();
+      }
     }
   });
 }
 
 async function claimHostIfNeeded() {
-  if (!state.roomRef || !state.participants.size) return;
+  if (state.isLeaving) return;
+  if (!state.roomRef) return;
+  if (state.hostClaimDisabled) return;
+  if (state.hostClaimInFlight) return;
 
-  const me = getCurrentUid();
-  if (!me) return;
+  // ここ重要: 両方ロードされるまで絶対に claim しない
+  if (!state.participantsLoaded || !state.metaLoaded) return;
 
-  const hostAlive = state.hostId && state.participants.has(state.hostId);
-  if (hostAlive) return;
+  const meKey = getCurrentParticipantKey();
+  if (!meKey) return;
 
+  // 自分がparticipantsにまだいないなら claim しない
+  if (!state.participants.has(meKey)) return;
+
+  // 既存ホストがparticipants上で生存なら何もしない
+  const hostAlive = !!(state.hostId && state.participants.has(state.hostId));
+  if (hostAlive) {
+    state.hostMissingSince = 0;
+    return;
+  }
+
+  // listener同期直後の瞬間的な不一致でclaimしない
+  if (!state.hostMissingSince) state.hostMissingSince = Date.now();
+  if (Date.now() - state.hostMissingSince < HOST_MISSING_GRACE_MS) return;
+
+  // 最古参加者のみclaim
   let oldestId = null;
   let oldestJoinedAt = Number.POSITIVE_INFINITY;
   state.participants.forEach((p, id) => {
@@ -209,26 +268,44 @@ async function claimHostIfNeeded() {
       oldestId = id;
     }
   });
-  if (oldestId !== me) return;
+  if (oldestId !== meKey) return;
 
+  state.hostClaimInFlight = true;
   try {
-    await state.roomRef.child('meta/hostId').transaction((current) => {
-      if (!current || !state.participants.has(current)) return me;
-      return current;
-    });
+    await state.roomRef.child('meta/hostId').transaction(
+      (current) => {
+        // 既存ホストが生存してるなら transaction中止（undefined返し）
+        if (current && state.participants.has(current)) return;
+        return meKey;
+      },
+      undefined,
+      false // applyLocally
+    );
   } catch (err) {
-    console.error('host claim failed', err);
+    const msg = String(err?.message || err || '');
+    // permission_denied が出るルール構成では、以後の自動claimを止める。
+    if (msg.includes('permission_denied')) {
+      state.hostClaimDisabled = true;
+      console.warn('auto host-claim disabled due to permission_denied');
+    } else {
+      console.error('host claim failed', err);
+    }
+  } finally {
+    state.hostClaimInFlight = false;
   }
 }
 
+
 async function pruneStaleParticipantsIfHost() {
+  if (state.isLeaving) return;
   if (!state.isHost || !state.roomRef) return;
+
   const now = nowServerMs();
-  const me = getCurrentUid();
+  const meKey = getCurrentParticipantKey();
 
   const updates = {};
   state.participants.forEach((p, id) => {
-    if (id === me) return;
+    if (id === meKey) return;
     const lastSeen = Number(p?.lastSeen || 0);
     if (now - lastSeen > STALE_MS) updates[`participants/${id}`] = null;
   });
@@ -243,9 +320,11 @@ async function pruneStaleParticipantsIfHost() {
 }
 
 export function tickUI() {
+  if (state.isLeaving) return;
+
   updateTimerUiOnly({ calcRemainingSec, phaseDurationSec, canUseVoiceNow });
   if (state.isHost && !state.timer.paused && !state.isSwitchingPhase) {
-    if (calcRemainingSec() <= 0) advancePhase();
+    if (calcRemainingSec() <= 0) void advancePhase();
   }
 }
 
@@ -269,7 +348,9 @@ export async function handleSkip() {
 }
 
 async function advancePhase() {
+  if (state.isLeaving) return;
   if (state.isSwitchingPhase) return;
+
   state.isSwitchingPhase = true;
   try {
     const currentPhase = state.timer.phase;
@@ -297,6 +378,9 @@ export async function toggleVoice() {
   if (!canUseVoiceNow()) return toast('休憩中だけ通話できます。', true);
 
   try {
+    // 通話を使う時だけPeerを初期化（失敗してもルーム参加は壊さない）
+    await initPeerIfNeeded();
+
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
       video: false,
@@ -366,24 +450,34 @@ export async function saveSettings() {
 }
 
 export async function leaveRoom() {
-  if (!state.roomId) return showScreen('lobby');
-
-  const me = getCurrentUid();
+  if (state.isLeaving) return;
+  state.isLeaving = true;
 
   try {
-    if (state.isHost && state.roomRef) {
-      const nextHost = [...state.participants.keys()].find((id) => id !== me) || null;
-      if (nextHost) await state.roomRef.child('meta/hostId').set(nextHost);
-      else await state.roomRef.remove();
+    if (!state.roomId) {
+      showScreen('lobby');
+      return;
     }
-  } catch (err) {
-    console.error(err);
-  }
 
-  cleanupAll();
-  clearRoomFromUrl();
-  showScreen('lobby');
-  toast('ルームを退出しました。');
+    const meKey = getCurrentParticipantKey();
+
+    try {
+      if (state.isHost && state.roomRef) {
+        const nextHost = [...state.participants.keys()].find((id) => id !== meKey) || null;
+        if (nextHost) await state.roomRef.child('meta/hostId').set(nextHost);
+        else await state.roomRef.remove();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+
+    cleanupAll();
+    clearRoomFromUrl();
+    showScreen('lobby');
+    toast('ルームを退出しました。');
+  } finally {
+    state.isLeaving = false;
+  }
 }
 
 function cleanupAll() {
@@ -394,22 +488,23 @@ function cleanupAll() {
   state.participants = new Map();
   renderParticipants({ canUseVoiceNow, connectToVoicePeers });
   updateTimerUiOnly({ calcRemainingSec, phaseDurationSec, canUseVoiceNow });
+  state.participantsLoaded = false;
+  state.metaLoaded = false;
+  state.hostClaimInFlight = false;
+  state.hostClaimDisabled = false;
+  state.hostMissingSince = 0;
+  state.joinedRoomAt = 0;
+
 }
 
 function cleanupRoomOnly() {
-  disableVoice(false).catch(() => {});
+  // 1) 先に DB listener を解除（removeより前）
+  state.roomDbListeners.forEach((off) => {
+    try { off(); } catch {}
+  });
+  state.roomDbListeners = [];
 
-  if (state.peer) {
-    try { state.peer.destroy(); } catch {}
-    state.peer = null;
-    state.peerReady = false;
-  }
-
-  if (state.participantRef) {
-    state.participantRef.remove().catch(() => {});
-    state.participantRef = null;
-  }
-
+  // 2) タイマー停止
   if (state.uiTicker) clearInterval(state.uiTicker);
   if (state.heartbeatTicker) clearInterval(state.heartbeatTicker);
   if (state.staleTicker) clearInterval(state.staleTicker);
@@ -418,7 +513,21 @@ function cleanupRoomOnly() {
   state.heartbeatTicker = null;
   state.staleTicker = null;
 
-  state.roomDbListeners.forEach((off) => off());
-  state.roomDbListeners = [];
+  // 3) 音声/Peer停止
+  disableVoice(false).catch(() => {});
+  if (state.peer) {
+    try { state.peer.destroy(); } catch {}
+    state.peer = null;
+    state.peerReady = false;
+  }
+
+  // 4) participant cleanup（listener解除後なので再入しにくい）
+  if (state.participantRef) {
+    try { state.participantRef.onDisconnect().cancel(); } catch {}
+    state.participantRef.remove().catch(() => {});
+    state.participantRef = null;
+  }
+
+  // 5) room ref cleanup
   state.roomRef = null;
 }

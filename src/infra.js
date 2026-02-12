@@ -1,5 +1,5 @@
 // src/infra.js
-import { state, nowServerMs, getCurrentUid } from './state.js';
+import { state, nowServerMs, getCurrentParticipantKey } from './state.js';
 import { STORAGE_KEYS, DEFAULT_SETTINGS, generateRoomCode, HEARTBEAT_MS, STALE_MS } from './utils.js';
 import { updateSoundButtonUI, toast } from './ui.js';
 
@@ -139,14 +139,27 @@ export function onDb(ref, event, handler, scope = 'room') {
   const off = () => ref.off(event, handler);
   if (scope === 'global') state.globalDbListeners.push(off);
   else state.roomDbListeners.push(off);
+  return off; // 追加
 }
+
 
 // ===== Auth =====
 export async function signInGuest() {
   ensureFirebaseLoaded();
   const auth = window.firebase.auth();
-  if (!auth.currentUser) await auth.signInAnonymously();
-  const user = auth.currentUser;
+
+  // 同一ブラウザ複数タブ検証時に UID 衝突を起こしにくくする
+  if (window.firebase?.auth?.Auth?.Persistence?.SESSION) {
+    await auth.setPersistence(window.firebase.auth.Auth.Persistence.SESSION);
+  }
+
+  // 既存匿名セッションを使い回さず、タブごとに分離
+  if (auth.currentUser?.isAnonymous) {
+    try { await auth.signOut(); } catch {}
+  }
+
+  const cred = await auth.signInAnonymously();
+  const user = cred?.user || auth.currentUser;
   if (!user) throw new Error('Anonymous sign-in failed');
   return user;
 }
@@ -176,7 +189,7 @@ export async function createRoomWithRetries(maxTry = 8) {
     const roomId = generateRoomCode();
     const ref = state.db.ref(`rooms/${roomId}`);
     const now = nowServerMs();
-    const me = getCurrentUid();
+    const me = getCurrentParticipantKey();
 
     const result = await ref.transaction((current) => {
       if (current !== null) return; // occupied
@@ -214,8 +227,8 @@ export async function writeTimer(patch) {
 export async function initPeerIfNeeded() {
   if (state.peer) return;
 
-  const me = getCurrentUid();
-  if (!me) throw new Error('UID is missing. Authenticate first.');
+  const me = getCurrentParticipantKey();
+  if (!me) throw new Error('Participant key is missing. Join room first.');
 
   await new Promise((resolve, reject) => {
     const peer = new Peer(me, { debug: 1 });
@@ -223,6 +236,8 @@ export async function initPeerIfNeeded() {
 
     peer.on('open', () => {
       state.peerReady = true;
+      // 実際の peer.id を参加者レコードへ反映（将来のID戦略変更にも耐える）
+      if (state.participantRef) state.participantRef.update({ peerId: peer.id }).catch(() => {});
       resolve();
     });
 
@@ -246,10 +261,17 @@ export async function initPeerIfNeeded() {
 export function connectToVoicePeers() {
   if (!state.peer || !state.peerReady || !state.localStream || !state.voiceEnabled) return;
 
-  const me = getCurrentUid();
+  const me = getCurrentParticipantKey();
   state.participants.forEach((p, id) => {
-    if (id === me || state.remoteCalls.has(id)) return;
-    const call = state.peer.call(id, state.localStream, { metadata: { roomId: state.roomId } });
+    if (id === me) return;
+    if (!p?.voiceEnabled) return;
+
+    const targetPeerId = p?.peerId || id;
+    if (!targetPeerId) return;
+    if (targetPeerId === state.peer.id) return;
+    if (state.remoteCalls.has(targetPeerId)) return;
+
+    const call = state.peer.call(targetPeerId, state.localStream, { metadata: { roomId: state.roomId } });
     if (call) attachRemoteCall(call);
   });
 }

@@ -1,0 +1,68 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+
+        ".write": "auth != null && (!data.exists() || root.child('rooms/' + $roomId + '/participants/' + root.child('rooms/' + $roomId + '/meta/hostId').val() + '/authUid').val() == auth.uid)",
+
+        "participants": {
+          "$pid": {
+            ".read": "auth != null",
+            ".write": "auth != null && (\n              (!data.exists() && newData.child('authUid').val() == auth.uid) ||\n              (data.exists() && data.child('authUid').val() == auth.uid) ||\n              (newData.val() == null && root.child('rooms/' + $roomId + '/participants/' + root.child('rooms/' + $roomId + '/meta/hostId').val() + '/authUid').val() == auth.uid)\n            )",
+
+            "authUid": {
+              ".validate": "newData.isString() && newData.val() == auth.uid"
+            },
+            "nickname": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 24"
+            },
+            "joinedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "lastSeen": {
+              ".validate": "newData.isNumber()"
+            },
+            "peerId": {
+              ".validate": "newData.isString()"
+            },
+            "voiceEnabled": {
+              ".validate": "newData.isBoolean()"
+            },
+            "muted": {
+              ".validate": "newData.isBoolean()"
+            },
+            "task": {
+              ".validate": "newData.isString() && newData.val().length <= 50"
+            }
+          }
+        },
+
+        "meta": {
+          "createdAt": {
+            ".write": "auth != null && !data.exists()",
+            ".validate": "newData.isNumber()"
+          },
+          "hostId": {
+            ".read": "auth != null",
+            ".write": "auth != null && (\n              !data.exists() ||\n              root.child('rooms/' + $roomId + '/participants/' + data.val() + '/authUid').val() == auth.uid ||\n              !root.child('rooms/' + $roomId + '/participants/' + data.val()).exists()\n            )",
+            ".validate": "newData.isString()"
+          }
+        },
+
+        "settings": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $roomId + '/participants/' + root.child('rooms/' + $roomId + '/meta/hostId').val() + '/authUid').val() == auth.uid"
+        },
+
+        "timer": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $roomId + '/participants/' + root.child('rooms/' + $roomId + '/meta/hostId').val() + '/authUid').val() == auth.uid"
+        }
+      }
+    }
+  }
+}

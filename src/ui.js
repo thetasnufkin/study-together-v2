@@ -1,5 +1,5 @@
 // src/ui.js
-import { state } from './state.js';
+import { state, getCurrentParticipantKey } from './state.js';
 import { secToMMSS } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
@@ -124,11 +124,6 @@ export function tag(text, cls = '') {
   return s;
 }
 
-function getCurrentUid() {
-  // 認証導入後は auth.uid 優先、なければ旧 uid をフォールバック
-  return state?.auth?.uid || state.uid || null;
-}
-
 export function renderParticipants({ canUseVoiceNow, connectToVoicePeers }) {
   if (!els.participantList) return;
   els.participantList.innerHTML = '';
@@ -139,7 +134,7 @@ export function renderParticipants({ canUseVoiceNow, connectToVoicePeers }) {
     return aj - bj;
   });
 
-  const me = getCurrentUid();
+  const me = getCurrentParticipantKey();
 
   arr.forEach(([id, p]) => {
     const li = document.createElement('li');
